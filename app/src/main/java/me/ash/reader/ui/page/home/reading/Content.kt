@@ -100,7 +100,11 @@ fun Content(
             if (!isLoading) {
                 when (renderer) {
                     ReadingRendererPreference.WebView ->
-                        item { RYWebView(content = content) }
+                        item {
+                            DisableSelection {
+                                RYWebView(content = content)
+                            }
+                        }
 
                     ReadingRendererPreference.NativeComponent ->
                         Reader(
