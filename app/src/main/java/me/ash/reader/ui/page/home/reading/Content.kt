@@ -112,6 +112,7 @@ fun Content(
                             subheadUpperCase = subheadUpperCase.value,
                             link = link ?: "",
                             content = content,
+                            onImageClick = onImageClick,
                             onLinkClick = {
                                 context.openURL(it, openLink, openLinkSpecificBrowser)
                             }
