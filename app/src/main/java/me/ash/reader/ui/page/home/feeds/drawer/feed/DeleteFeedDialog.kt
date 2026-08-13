@@ -9,7 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import me.ash.reader.R
 import me.ash.reader.ui.component.base.RYDialog
 import me.ash.reader.ui.ext.collectAsStateValue
@@ -19,6 +19,7 @@ import me.ash.reader.ui.ext.showToast
 fun DeleteFeedDialog(
     feedName: String,
     feedOptionViewModel: FeedOptionViewModel = hiltViewModel(),
+    onConfirm: () -> Unit,
 ) {
     val context = LocalContext.current
     val feedOptionUiState = feedOptionViewModel.feedOptionUiState.collectAsStateValue()
@@ -47,7 +48,7 @@ fun DeleteFeedDialog(
                 onClick = {
                     feedOptionViewModel.delete {
                         feedOptionViewModel.hideDeleteDialog()
-                        feedOptionViewModel.hideDrawer(scope)
+                        onConfirm()
                         context.showToast(toastString)
                     }
                 }

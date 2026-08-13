@@ -1,37 +1,39 @@
 package me.ash.reader.ui.page.home.feeds.drawer.feed
 
 import androidx.compose.material.ExperimentalMaterialApi
-import androidx.compose.material.ModalBottomSheetState
-import androidx.compose.material.ModalBottomSheetValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.ash.reader.domain.model.feed.Feed
 import me.ash.reader.domain.model.group.Group
+import me.ash.reader.domain.repository.FeedDao
 import me.ash.reader.domain.service.RssService
 import me.ash.reader.infrastructure.di.ApplicationScope
 import me.ash.reader.infrastructure.di.IODispatcher
 import me.ash.reader.infrastructure.di.MainDispatcher
-import javax.inject.Inject
+import me.ash.reader.infrastructure.rss.RssHelper
 
 @OptIn(ExperimentalMaterialApi::class)
 @HiltViewModel
-class FeedOptionViewModel @Inject constructor(
+class FeedOptionViewModel
+@Inject
+constructor(
     val rssService: RssService,
-    @MainDispatcher
-    private val mainDispatcher: CoroutineDispatcher,
-    @IODispatcher
-    private val ioDispatcher: CoroutineDispatcher,
-    @ApplicationScope
-    private val applicationScope: CoroutineScope,
+    @MainDispatcher private val mainDispatcher: CoroutineDispatcher,
+    @IODispatcher private val ioDispatcher: CoroutineDispatcher,
+    @ApplicationScope private val applicationScope: CoroutineScope,
+    private val rssHelper: RssHelper,
+    private val feedDao: FeedDao,
 ) : ViewModel() {
 
     private val _feedOptionUiState = MutableStateFlow(FeedOptionUiState())
@@ -39,49 +41,25 @@ class FeedOptionViewModel @Inject constructor(
 
     init {
         viewModelScope.launch(ioDispatcher) {
-            rssService.get().pullGroups().collect { groups ->
-                _feedOptionUiState.update { it.copy(groups = groups) }
+            rssService.flow().collectLatest {
+                it.pullGroups().collectLatest { groups ->
+                    _feedOptionUiState.update { it.copy(groups = groups) }
+                }
             }
         }
     }
 
-    private suspend fun fetchFeed(feedId: String) {
+    suspend fun fetchFeed(feedId: String) {
         val feed = rssService.get().findFeedById(feedId)
-        _feedOptionUiState.update {
-            it.copy(
-                feed = feed,
-                selectedGroupId = feed?.groupId ?: "",
-            )
-        }
-    }
-
-    fun showDrawer(scope: CoroutineScope, feedId: String) {
-        scope.launch {
-            fetchFeed(feedId)
-            _feedOptionUiState.value.drawerState.show()
-        }
-    }
-
-    fun hideDrawer(scope: CoroutineScope) {
-        scope.launch { _feedOptionUiState.value.drawerState.hide() }
+        _feedOptionUiState.update { it.copy(feed = feed, selectedGroupId = feed?.groupId ?: "") }
     }
 
     fun showNewGroupDialog() {
-        _feedOptionUiState.update {
-            it.copy(
-                newGroupDialogVisible = true,
-                newGroupContent = "",
-            )
-        }
+        _feedOptionUiState.update { it.copy(newGroupDialogVisible = true, newGroupContent = "") }
     }
 
     fun hideNewGroupDialog() {
-        _feedOptionUiState.update {
-            it.copy(
-                newGroupDialogVisible = false,
-                newGroupContent = "",
-            )
-        }
+        _feedOptionUiState.update { it.copy(newGroupDialogVisible = false, newGroupContent = "") }
     }
 
     fun inputNewGroup(content: String) {
@@ -91,9 +69,14 @@ class FeedOptionViewModel @Inject constructor(
     fun addNewGroup() {
         if (_feedOptionUiState.value.newGroupContent.isNotBlank()) {
             applicationScope.launch {
-                selectedGroup(rssService.get().addGroup(
-                    destFeed = _feedOptionUiState.value.feed,
-                    newGroupName = _feedOptionUiState.value.newGroupContent))
+                selectedGroup(
+                    rssService
+                        .get()
+                        .addGroup(
+                            destFeed = _feedOptionUiState.value.feed,
+                            newGroupName = _feedOptionUiState.value.newGroupContent,
+                        )
+                )
                 hideNewGroupDialog()
             }
         }
@@ -102,10 +85,9 @@ class FeedOptionViewModel @Inject constructor(
     fun selectedGroup(groupId: String) {
         applicationScope.launch(ioDispatcher) {
             _feedOptionUiState.value.feed?.let {
-                rssService.get().moveFeed(
-                    originGroupId = it.groupId,
-                    feed = it.copy(groupId = groupId)
-                )
+                rssService
+                    .get()
+                    .moveFeed(originGroupId = it.groupId, feed = it.copy(groupId = groupId))
                 fetchFeed(it.id)
             }
         }
@@ -114,7 +96,24 @@ class FeedOptionViewModel @Inject constructor(
     fun changeParseFullContentPreset() {
         viewModelScope.launch(ioDispatcher) {
             _feedOptionUiState.value.feed?.let {
-                rssService.get().updateFeed(it.copy(isFullContent = !it.isFullContent))
+                val isFullContent = !it.isFullContent
+                val isBrowser = if (isFullContent) false else it.isBrowser
+                rssService
+                    .get()
+                    .updateFeed(it.copy(isFullContent = isFullContent, isBrowser = isBrowser))
+                fetchFeed(it.id)
+            }
+        }
+    }
+
+    fun changeOpenInBrowserPreset() {
+        viewModelScope.launch(ioDispatcher) {
+            _feedOptionUiState.value.feed?.let {
+                val isBrowser = !it.isBrowser
+                val isFullContent = if (isBrowser) false else it.isFullContent
+                rssService
+                    .get()
+                    .updateFeed(it.copy(isBrowser = isBrowser, isFullContent = isFullContent))
                 fetchFeed(it.id)
             }
         }
@@ -133,9 +132,7 @@ class FeedOptionViewModel @Inject constructor(
         _feedOptionUiState.value.feed?.let {
             applicationScope.launch(ioDispatcher) {
                 rssService.get().deleteFeed(it)
-                withContext(mainDispatcher) {
-                    callback()
-                }
+                withContext(mainDispatcher) { callback() }
             }
         }
     }
@@ -160,9 +157,7 @@ class FeedOptionViewModel @Inject constructor(
         _feedOptionUiState.value.feed?.let {
             viewModelScope.launch(ioDispatcher) {
                 rssService.get().deleteArticles(feed = it)
-                withContext(mainDispatcher) {
-                    callback()
-                }
+                withContext(mainDispatcher) { callback() }
             }
         }
     }
@@ -178,20 +173,12 @@ class FeedOptionViewModel @Inject constructor(
 
     fun showRenameDialog() {
         _feedOptionUiState.update {
-            it.copy(
-                renameDialogVisible = true,
-                newName = _feedOptionUiState.value.feed?.name ?: "",
-            )
+            it.copy(renameDialogVisible = true, newName = _feedOptionUiState.value.feed?.name ?: "")
         }
     }
 
     fun hideRenameDialog() {
-        _feedOptionUiState.update {
-            it.copy(
-                renameDialogVisible = false,
-                newName = "",
-            )
-        }
+        _feedOptionUiState.update { it.copy(renameDialogVisible = false, newName = "") }
     }
 
     fun inputNewName(content: String) {
@@ -208,12 +195,7 @@ class FeedOptionViewModel @Inject constructor(
     }
 
     fun hideFeedUrlDialog() {
-        _feedOptionUiState.update {
-            it.copy(
-                changeUrlDialogVisible = false,
-                newUrl = "",
-            )
-        }
+        _feedOptionUiState.update { it.copy(changeUrlDialogVisible = false, newUrl = "") }
     }
 
     fun inputNewUrl(content: String) {
@@ -228,11 +210,19 @@ class FeedOptionViewModel @Inject constructor(
             }
         }
     }
+
+    fun reloadIcon() {
+        _feedOptionUiState.value.feed?.let { feed ->
+            viewModelScope.launch(ioDispatcher) {
+                val icon = rssHelper.queryRssIconLink(feed.url) ?: return@launch
+                feedDao.update(feed.copy(icon = icon))
+                fetchFeed(feed.id)
+            }
+        }
+    }
 }
 
-@OptIn(ExperimentalMaterialApi::class)
 data class FeedOptionUiState(
-    var drawerState: ModalBottomSheetState = ModalBottomSheetState(ModalBottomSheetValue.Hidden),
     val feed: Feed? = null,
     val selectedGroupId: String = "",
     val newGroupContent: String = "",

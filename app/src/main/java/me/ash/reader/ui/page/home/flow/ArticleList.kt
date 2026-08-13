@@ -9,6 +9,7 @@ import androidx.compose.ui.unit.dp
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
+import me.ash.reader.domain.data.Diff
 import me.ash.reader.domain.model.article.ArticleFlowItem
 import me.ash.reader.domain.model.article.ArticleWithFeed
 
@@ -16,15 +17,15 @@ import me.ash.reader.domain.model.article.ArticleWithFeed
 @OptIn(ExperimentalFoundationApi::class)
 fun LazyListScope.ArticleList(
     pagingItems: LazyPagingItems<ArticleFlowItem>,
-    isFilterUnread: Boolean,
+    diffMap: Map<String, Diff>,
     isShowFeedIcon: Boolean,
     isShowStickyHeader: Boolean,
     articleListTonalElevation: Int,
     isSwipeEnabled: () -> Boolean = { false },
     isMenuEnabled: Boolean = true,
-    onClick: (ArticleWithFeed) -> Unit = {},
-    onToggleStarred: (ArticleWithFeed, Long) -> Unit = { _, _ -> },
-    onToggleRead: (ArticleWithFeed, Long) -> Unit = { _, _ -> },
+    onClick: (ArticleWithFeed, Int) -> Unit = { _, _ -> },
+    onToggleStarred: (ArticleWithFeed) -> Unit = {},
+    onToggleRead: (ArticleWithFeed) -> Unit = {},
     onMarkAboveAsRead: ((ArticleWithFeed) -> Unit)? = null,
     onMarkBelowAsRead: ((ArticleWithFeed) -> Unit)? = null,
     onShare: ((ArticleWithFeed) -> Unit)? = null,
@@ -36,28 +37,32 @@ fun LazyListScope.ArticleList(
         items(
             count = pagingItems.itemCount,
             key = pagingItems.itemKey(::key),
-            contentType = pagingItems.itemContentType(::contentType)
+            contentType = pagingItems.itemContentType(::contentType),
         ) { index ->
             when (val item = pagingItems[index]) {
                 is ArticleFlowItem.Article -> {
+                    val article = item.articleWithFeed.article
                     SwipeableArticleItem(
                         articleWithFeed = item.articleWithFeed,
-                        isFilterUnread = isFilterUnread,
+                        isUnread = diffMap[article.id]?.isUnread ?: article.isUnread,
                         articleListTonalElevation = articleListTonalElevation,
-                        onClick = onClick,
+                        onClick = { onClick(it, index) },
                         isSwipeEnabled = isSwipeEnabled,
                         isMenuEnabled = isMenuEnabled,
                         onToggleStarred = onToggleStarred,
                         onToggleRead = onToggleRead,
-                        onMarkAboveAsRead = if (index == 1) null else onMarkAboveAsRead, // index == 0 -> ArticleFlowItem.Date
-                        onMarkBelowAsRead = if (index == pagingItems.itemCount - 1) null else onMarkBelowAsRead,
-                        onShare = onShare
+                        onMarkAboveAsRead =
+                            if (index == 1) null
+                            else onMarkAboveAsRead, // index == 0 -> ArticleFlowItem.Date
+                        onMarkBelowAsRead =
+                            if (index == pagingItems.itemCount - 1) null else onMarkBelowAsRead,
+                        onShare = onShare,
                     )
                 }
 
                 is ArticleFlowItem.Date -> {
                     if (item.showSpacer) {
-                        Spacer(modifier = Modifier.height(40.dp))
+                        Spacer(modifier = Modifier.height(32.dp))
                     }
                     StickyHeader(item.date, isShowFeedIcon, articleListTonalElevation)
                 }
@@ -70,25 +75,29 @@ fun LazyListScope.ArticleList(
             when (val item = pagingItems.peek(index)) {
                 is ArticleFlowItem.Article -> {
                     item(key = key(item), contentType = contentType(item)) {
+                        val article = item.articleWithFeed.article
                         SwipeableArticleItem(
                             articleWithFeed = item.articleWithFeed,
-                            isFilterUnread = isFilterUnread,
+                            isUnread = diffMap[article.id]?.isUnread ?: article.isUnread,
                             articleListTonalElevation = articleListTonalElevation,
-                            onClick = onClick,
+                            onClick = { onClick(it, index) },
                             isSwipeEnabled = isSwipeEnabled,
                             isMenuEnabled = isMenuEnabled,
                             onToggleStarred = onToggleStarred,
                             onToggleRead = onToggleRead,
-                            onMarkAboveAsRead = if (index == 1) null else onMarkAboveAsRead, // index == 0 -> ArticleFlowItem.Date
-                            onMarkBelowAsRead = if (index == pagingItems.itemCount - 1) null else onMarkBelowAsRead,
-                            onShare = onShare
+                            onMarkAboveAsRead =
+                                if (index == 1) null
+                                else onMarkAboveAsRead, // index == 0 -> ArticleFlowItem.Date
+                            onMarkBelowAsRead =
+                                if (index == pagingItems.itemCount - 1) null else onMarkBelowAsRead,
+                            onShare = onShare,
                         )
                     }
                 }
 
                 is ArticleFlowItem.Date -> {
                     if (item.showSpacer) {
-                        item { Spacer(modifier = Modifier.height(40.dp)) }
+                        item { Spacer(modifier = Modifier.height(32.dp)) }
                     }
                     stickyHeader(key = key(item), contentType = contentType(item)) {
                         StickyHeader(item.date, isShowFeedIcon, articleListTonalElevation)
@@ -110,10 +119,10 @@ private fun key(item: ArticleFlowItem): String {
 
 private fun contentType(item: ArticleFlowItem): Int {
     return when (item) {
-        is ArticleFlowItem.Article -> ARTICLE
-        is ArticleFlowItem.Date -> DATE
+        is ArticleFlowItem.Article -> CONTENT_TYPE_ARTICLE
+        is ArticleFlowItem.Date -> CONTENT_TYPE_DATE_HEADER
     }
 }
 
-private const val ARTICLE = 1
-private const val DATE = 2
+const val CONTENT_TYPE_ARTICLE = 1
+const val CONTENT_TYPE_DATE_HEADER = 2
